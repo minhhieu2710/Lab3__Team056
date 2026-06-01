@@ -2,13 +2,40 @@ import streamlit as st
 import sqlite3
 import os
 import json
+import re
 from datetime import datetime
+from dotenv import load_dotenv
 
 from src.tools.model_evaluator import evaluate_submission
+from src.tools.db_tool import DBTool
 from src.core.openai_provider import OpenAIProvider
 from src.agent.agent import ReActAgent
 
+load_dotenv()
+
 DB_PATH = 'gradebook.db'
+STUDENT_ID_RE = re.compile(r'\b[0-9a-fA-F]{8,32}\b')
+
+
+def query_student(student_id: str):
+    return DBTool(db_path=DB_PATH).get_student_info(student_id=student_id)
+
+
+def summarize_student_lookup(result):
+    student = result.get('student') if isinstance(result, dict) else None
+    if not student:
+        return 'Khong tim thay sinh vien nay trong database.'
+
+    submissions = result.get('submissions') or []
+    return (
+        f"Tim thay sinh vien `{student.get('id')}`: "
+        f"nam tuyen sinh {student.get('nam_tuyensinh')}, "
+        f"phuong thuc {student.get('ptxt')}, "
+        f"to hop {student.get('tohoptxt')}, "
+        f"diem trung tuyen {student.get('diem_trungtuyen')}, "
+        f"diem chuan {student.get('diem_chuan')}. "
+        f"So submissions: {len(submissions)}."
+    )
 
 st.set_page_config(page_title='Agent Dashboard & Chatbot', layout='wide')
 
@@ -39,6 +66,22 @@ st.title('Agent Dashboard & Chatbot')
 
 # Sidebar navigation
 page = st.sidebar.radio('Navigation', ['Dashboard', 'Tools', 'Chatbot', 'Agent'])
+
+# OpenAI key availability
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+def render_key_notice():
+    st.warning('OpenAI API key not found. To enable Chatbot/Model Eval, set `OPENAI_API_KEY` environment variable.')
+    st.markdown('''
+    **Set in PowerShell (current session):**
+    ```powershell
+    $env:OPENAI_API_KEY = "sk-..."
+    ```
+    **Set persistently (PowerShell):**
+    ```powershell
+    setx OPENAI_API_KEY "sk-..."
+    ```
+    After setting persistently, restart your terminal/Streamlit process.
+    ''')
 
 ########### Dashboard Page ###########
 if page == 'Dashboard':
@@ -90,27 +133,30 @@ elif page == 'Tools':
             except Exception as e:
                 st.error(f'Invalid rubric JSON: {e}')
                 rubric = {}
-            api_key = os.getenv('OPENAI_API_KEY')
-            with st.spinner('Calling evaluator...'):
-                res = evaluate_submission(submission_text, rubric, api_key=api_key, model='gpt-4o-mini')
-                st.json(res)
-                # persist if parsed ok
-                if res.get('parse_status') == 'ok':
-                    score = res.get('score')
-                    breakdown = json.dumps(res.get('breakdown', {}))
-                    feedback = res.get('feedback', '')
-                    raw = res.get('raw_text', '')
-                    status = 'ok'
-                else:
-                    score = None
-                    breakdown = None
-                    feedback = ''
-                    raw = res.get('raw_text','')
-                    status = 'needs_human_review'
-                cur.execute('INSERT INTO evaluations(submission_id, student_id, score, breakdown_json, feedback, raw_text, status, created_at) VALUES (?,?,?,?,?,?,?,?)',
-                            (None, student_id, score, breakdown, feedback, raw, status, datetime.utcnow().isoformat()))
-                conn.commit()
-                st.success('Evaluation recorded')
+            api_key = OPENAI_API_KEY
+            if not api_key:
+                render_key_notice()
+            else:
+                with st.spinner('Calling evaluator...'):
+                    res = evaluate_submission(submission_text, rubric, api_key=api_key, model='gpt-4o-mini')
+                    st.json(res)
+                    # persist if parsed ok
+                    if res.get('parse_status') == 'ok':
+                        score = res.get('score')
+                        breakdown = json.dumps(res.get('breakdown', {}))
+                        feedback = res.get('feedback', '')
+                        raw = res.get('raw_text', '')
+                        status = 'ok'
+                    else:
+                        score = None
+                        breakdown = None
+                        feedback = ''
+                        raw = res.get('raw_text','')
+                        status = 'needs_human_review'
+                    cur.execute('INSERT INTO evaluations(submission_id, student_id, score, breakdown_json, feedback, raw_text, status, created_at) VALUES (?,?,?,?,?,?,?,?)',
+                                (None, student_id, score, breakdown, feedback, raw, status, datetime.utcnow().isoformat()))
+                    conn.commit()
+                    st.success('Evaluation recorded')
 
 
 ########### Chatbot Page ###########
@@ -122,12 +168,15 @@ elif page == 'Chatbot':
         if not user_msg.strip():
             st.error('Type a message')
         else:
-            api_key = os.getenv('OPENAI_API_KEY')
-            prov = OpenAIProvider(model_name=model_choice, api_key=api_key)
-            resp = prov.generate(user_msg)
-            st.subheader('Response')
-            st.write(resp.get('content'))
-            st.json({'usage': resp.get('usage'), 'latency_ms': resp.get('latency_ms')})
+            api_key = OPENAI_API_KEY
+            if not api_key:
+                render_key_notice()
+            else:
+                prov = OpenAIProvider(model_name=model_choice, api_key=api_key)
+                resp = prov.generate(user_msg)
+                st.subheader('Response')
+                st.write(resp.get('content'))
+                st.json({'usage': resp.get('usage'), 'latency_ms': resp.get('latency_ms')})
 
 
 ########### Agent Page ###########
@@ -140,16 +189,40 @@ elif page == 'Agent':
         if not agent_input.strip():
             st.error('Provide input for the agent')
         else:
-            api_key = os.getenv('OPENAI_API_KEY')
-            prov = OpenAIProvider(model_name=model_choice, api_key=api_key)
-            # define minimal tools metadata
-            tools = [
-                {'name':'db_query','description':'Get student info by student_id'},
-                {'name':'model_eval','description':'Evaluate submission text against rubric'}
-            ]
-            agent = ReActAgent(llm=prov, tools=tools, max_steps=max_steps)
-            with st.spinner('Running agent...'):
-                out = agent.run(agent_input)
+            student_id_match = STUDENT_ID_RE.search(agent_input)
+            if student_id_match:
+                student_id = student_id_match.group(0)
+                with st.spinner('Querying database...'):
+                    result = query_student(student_id)
                 st.subheader('Agent Output')
-                st.write(out)
+                st.write(summarize_student_lookup(result))
+                st.json(result)
+            else:
+                api_key = OPENAI_API_KEY
+                if not api_key:
+                    render_key_notice()
+                else:
+                    prov = OpenAIProvider(model_name=model_choice, api_key=api_key)
+                    tools = [
+                        {
+                            'name': 'db_query',
+                            'description': 'Get student info. Args: student_id (string).',
+                            'function': query_student,
+                        },
+                        {
+                            'name': 'model_eval',
+                            'description': 'Evaluate submission text. Args: submission_text (string), rubric (object).',
+                            'function': lambda submission_text, rubric: evaluate_submission(
+                                submission_text,
+                                rubric,
+                                api_key=api_key,
+                                model=model_choice,
+                            ),
+                        },
+                    ]
+                    agent = ReActAgent(llm=prov, tools=tools, max_steps=max_steps)
+                    with st.spinner('Running agent...'):
+                        out = agent.run(agent_input)
+                        st.subheader('Agent Output')
+                        st.write(out)
 
