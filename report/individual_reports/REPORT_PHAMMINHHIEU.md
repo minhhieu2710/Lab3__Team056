@@ -1,7 +1,6 @@
 # Individual Report: Lab 3 - Chatbot vs ReAct Agent
 
 - **Student Name**: Phạm Minh Hiếu
-- **Student ID**: 2151060281
 - **Role**: Dev B (LLM Providers & Chatbot Baseline)
 - **Date**: 2026-06-01
 
