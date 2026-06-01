@@ -1,0 +1,98 @@
+[
+  {
+    "v1": {
+      "version": "v1",
+      "tc": "Simple Math (with JSON parse error injected)",
+      "answer": "The result is 110.",
+      "steps": 3,
+      "total_latency": 1,
+      "total_tokens": 930,
+      "total_cost": 0.0039,
+      "token_eff": 0.233,
+      "success": true
+    },
+    "v2": {
+      "version": "v2",
+      "tc": "Simple Math (with JSON parse error injected)",
+      "answer": "The result is 110.",
+      "steps": 3,
+      "total_latency": 0,
+      "total_tokens": 930,
+      "total_cost": 0.0039,
+      "token_eff": 0.233,
+      "success": true
+    }
+  },
+  {
+    "v1": {
+      "version": "v1",
+      "tc": "E-commerce (with hallucination injected)",
+      "answer": "Final total is $1,040.00",
+      "steps": 3,
+      "total_latency": 0,
+      "total_tokens": 930,
+      "total_cost": 0.0039,
+      "token_eff": 0.233,
+      "success": true
+    },
+    "v2": {
+      "version": "v2",
+      "tc": "E-commerce (with hallucination injected)",
+      "answer": "Final total is $1,040.00",
+      "steps": 3,
+      "total_latency": 0,
+      "total_tokens": 930,
+      "total_cost": 0.0039,
+      "token_eff": 0.233,
+      "success": true
+    }
+  },
+  {
+    "v1": {
+      "version": "v1",
+      "tc": "Inventory + price (duplicate action injected)",
+      "answer": "Price is $2,264.10 (in stock, 5 units).",
+      "steps": 4,
+      "total_latency": 1,
+      "total_tokens": 1450,
+      "total_cost": 0.00595,
+      "token_eff": 0.2228,
+      "success": true
+    },
+    "v2": {
+      "version": "v2",
+      "tc": "Inventory + price (duplicate action injected)",
+      "answer": "Price is $2,264.10 (in stock, 5 units).",
+      "steps": 4,
+      "total_latency": 0,
+      "total_tokens": 1450,
+      "total_cost": 0.00595,
+      "token_eff": 0.2228,
+      "success": true
+    }
+  },
+  {
+    "v1": {
+      "version": "v1",
+      "tc": "Multi-tool chain (clean run)",
+      "answer": "Final shipping cost is $12.00",
+      "steps": 5,
+      "total_latency": 0,
+      "total_tokens": 2075,
+      "total_cost": 0.008375,
+      "token_eff": 0.215,
+      "success": true
+    },
+    "v2": {
+      "version": "v2",
+      "tc": "Multi-tool chain (clean run)",
+      "answer": "Final shipping cost is $12.00",
+      "steps": 5,
+      "total_latency": 0,
+      "total_tokens": 2075,
+      "total_cost": 0.008375,
+      "token_eff": 0.215,
+      "success": true
+    }
+  }
+]
