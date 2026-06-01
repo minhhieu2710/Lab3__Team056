@@ -28,3 +28,17 @@ class LLMProvider(ABC):
     def stream(self, prompt: str, system_prompt: Optional[str] = None) -> Generator[str, None, None]:
         """Produce a streaming completion."""
         pass
+
+    @staticmethod
+    def extract_json(response_text: str) -> str:
+        """
+        Helper method to extract JSON from markdown code blocks in LLM responses.
+        Useful for Dev C when parsing Actions.
+        """
+        import re
+        # Look for json blocks
+        match = re.search(r"```(?:json)?(.*?)```", response_text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        # Fallback to the original text (might already be raw json)
+        return response_text.strip()
