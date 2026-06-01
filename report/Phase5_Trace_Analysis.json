@@ -1,0 +1,331 @@
+{
+  "phase": 5,
+  "generated_at": "2026-06-01T16:29:11.255469",
+  "total_sessions": 21,
+  "status_summary": {
+    "success": 12,
+    "timeout": 3,
+    "error": 6
+  },
+  "error_type_counts": {
+    "Timeout / max_steps_exceeded": 3,
+    "Hallucination Error": 3,
+    "JSON Parser Error": 3
+  },
+  "root_cause_analysis": {
+    "JSON Parser Error": {
+      "root_cause": "LLM does not always produce strict JSON for the Action field. Common causes: (1) model uses Python-style calls like `search(query='x')` instead of JSON, (2) model wraps JSON in markdown fences without being asked, (3) incomplete JSON when token limit is approached.",
+      "impact": "Agent cannot execute the intended tool → wastes one step, re-queries LLM.",
+      "fix_v2": "Add explicit JSON formatting instructions + a few-shot example in the system prompt. Extend the regex parser to handle `tool_name(arg=val)` style as a fallback (Strategy 3).",
+      "severity": "MEDIUM"
+    },
+    "Hallucination Error": {
+      "root_cause": "LLM 'invents' a tool that was not listed in the system prompt. Root cause is insufficient grounding: the model's training data contains many tool names (weather_api, calendar_search, etc.) and it confuses memorized knowledge with the actual tool list provided at runtime.",
+      "impact": "Agent calls a non-existent tool → receives an ERROR observation → may recover on next step or get stuck if it keeps hallucinating.",
+      "fix_v2": "Reinforce the available-tools list in every step of the prompt (not just system prompt). Add a post-generation validator that rejects any Action whose `tool` key is not in the registered tool registry before sending to executor.",
+      "severity": "HIGH"
+    },
+    "Timeout / max_steps_exceeded": {
+      "root_cause": "Agent enters a reasoning loop where each step invokes a tool but never reaches a conclusion. Often caused by: (1) vague or open-ended queries, (2) tool results that are incomplete, prompting more searches, (3) missing 'stop' instruction — LLM doesn't know when it has 'enough' information.",
+      "impact": "Agent hits max_steps guard → returns AGENT TIMEOUT message → query goes unanswered, wastes N × LLM calls.",
+      "fix_v2": "Add 'You MUST provide a Final Answer within {max_steps} steps' to system prompt. Decrease default max_steps from 10 to 5 for common queries. Add step-count awareness: inject 'Step {n}/{max}' into each prompt iteration.",
+      "severity": "HIGH"
+    },
+    "Infinite Loop": {
+      "root_cause": "Agent repeatedly generates the same Thought and the same tool Action. Occurs when: (1) tool observation is identical each iteration (deterministic tool with same input), (2) LLM temperature is 0 and context is identical → model deterministically repeats itself.",
+      "impact": "Hits max_steps → timeout. Every repeated step burns tokens and cost.",
+      "fix_v2": "Track Action history; if the same (tool, args) pair is seen twice, inject a forced observation: 'You already called this tool with the same args. You must try a different approach or provide a Final Answer.' Also raise LLM temperature slightly (0.0→0.3) to increase output diversity.",
+      "severity": "MEDIUM"
+    },
+    "LLM Call Error": {
+      "root_cause": "API timeout, network failure, or invalid API key.",
+      "impact": "Step fails; agent logs an ERROR observation and retries on next loop.",
+      "fix_v2": "Implement exponential backoff retry (max 3 attempts) around LLM calls.",
+      "severity": "LOW"
+    }
+  },
+  "sessions": [
+    {
+      "user_input": "Hi there",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 1,
+      "errors": [],
+      "final_answer": "Hello! How can I help?",
+      "total_tokens": 150,
+      "total_cost_usd": 0.0002,
+      "timestamp": "2026-06-01T07:58:55.989656"
+    },
+    {
+      "user_input": "What is Python?",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Python is a programming language.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T07:58:55.992378"
+    },
+    {
+      "user_input": "Calculate price with 10% tax",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 3,
+      "errors": [],
+      "final_answer": "The total price with tax is 110.0",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T07:58:55.994559"
+    },
+    {
+      "user_input": "Keep searching",
+      "model": "mock-model",
+      "status": "timeout",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Timeout / max_steps_exceeded",
+          "description": "Agent ran 2 steps without a Final Answer"
+        }
+      ],
+      "final_answer": null,
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T07:58:55.996144"
+    },
+    {
+      "user_input": "What's the weather?",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Hallucination Error",
+          "description": "{\"tool_requested\": \"weather_api\", \"available\": [\"search\", \"calculator\"]}",
+          "timestamp": "2026-06-01T07:58:55.998773"
+        }
+      ],
+      "final_answer": "I cannot check weather without the right tool.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T07:58:55.998252"
+    },
+    {
+      "user_input": "Search for test",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 3,
+      "errors": [
+        {
+          "type": "JSON Parser Error",
+          "description": "{\"step\": 1, \"error\": \"Could not parse Action JSON from LLM output\", \"raw_output\": \"Thought: Let me search.\\nAction: search(query='test')\"}",
+          "timestamp": "2026-06-01T07:58:56.000349"
+        }
+      ],
+      "final_answer": "Found the answer.",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T07:58:55.999832"
+    },
+    {
+      "user_input": "Test history",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Done.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T07:58:56.001963"
+    },
+    {
+      "user_input": "Hi there",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 1,
+      "errors": [],
+      "final_answer": "Hello! How can I help?",
+      "total_tokens": 150,
+      "total_cost_usd": 0.0002,
+      "timestamp": "2026-06-01T08:30:49.228708"
+    },
+    {
+      "user_input": "What is Python?",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Python is a programming language.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T08:30:49.230921"
+    },
+    {
+      "user_input": "Calculate price with 10% tax",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 3,
+      "errors": [],
+      "final_answer": "The total price with tax is 110.0",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T08:30:49.233014"
+    },
+    {
+      "user_input": "Keep searching",
+      "model": "mock-model",
+      "status": "timeout",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Timeout / max_steps_exceeded",
+          "description": "Agent ran 2 steps without a Final Answer"
+        }
+      ],
+      "final_answer": null,
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T08:30:49.234605"
+    },
+    {
+      "user_input": "What's the weather?",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Hallucination Error",
+          "description": "{\"tool_requested\": \"weather_api\", \"available\": [\"search\", \"calculator\"]}",
+          "timestamp": "2026-06-01T08:30:49.236731"
+        }
+      ],
+      "final_answer": "I cannot check weather without the right tool.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T08:30:49.236213"
+    },
+    {
+      "user_input": "Search for test",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 3,
+      "errors": [
+        {
+          "type": "JSON Parser Error",
+          "description": "{\"step\": 1, \"error\": \"Could not parse Action JSON from LLM output\", \"raw_output\": \"Thought: Let me search.\\nAction: search(query='test')\"}",
+          "timestamp": "2026-06-01T08:30:49.238314"
+        }
+      ],
+      "final_answer": "Found the answer.",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T08:30:49.237797"
+    },
+    {
+      "user_input": "Test history",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Done.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T08:30:49.240636"
+    },
+    {
+      "user_input": "Hi there",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 1,
+      "errors": [],
+      "final_answer": "Hello! How can I help?",
+      "total_tokens": 150,
+      "total_cost_usd": 0.0002,
+      "timestamp": "2026-06-01T09:24:25.270334"
+    },
+    {
+      "user_input": "What is Python?",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Python is a programming language.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T09:24:25.271973"
+    },
+    {
+      "user_input": "Calculate price with 10% tax",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 3,
+      "errors": [],
+      "final_answer": "The total price with tax is 110.0",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T09:24:25.273607"
+    },
+    {
+      "user_input": "Keep searching",
+      "model": "mock-model",
+      "status": "timeout",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Timeout / max_steps_exceeded",
+          "description": "Agent ran 2 steps without a Final Answer"
+        }
+      ],
+      "final_answer": null,
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T09:24:25.275801"
+    },
+    {
+      "user_input": "What's the weather?",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 2,
+      "errors": [
+        {
+          "type": "Hallucination Error",
+          "description": "{\"tool_requested\": \"weather_api\", \"available\": [\"search\", \"calculator\"]}",
+          "timestamp": "2026-06-01T09:24:25.277451"
+        }
+      ],
+      "final_answer": "I cannot check weather without the right tool.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T09:24:25.277451"
+    },
+    {
+      "user_input": "Search for test",
+      "model": "mock-model",
+      "status": "error",
+      "steps": 3,
+      "errors": [
+        {
+          "type": "JSON Parser Error",
+          "description": "{\"step\": 1, \"error\": \"Could not parse Action JSON from LLM output\", \"raw_output\": \"Thought: Let me search.\\nAction: search(query='test')\"}",
+          "timestamp": "2026-06-01T09:24:25.279049"
+        }
+      ],
+      "final_answer": "Found the answer.",
+      "total_tokens": 450,
+      "total_cost_usd": 0.0006,
+      "timestamp": "2026-06-01T09:24:25.278526"
+    },
+    {
+      "user_input": "Test history",
+      "model": "mock-model",
+      "status": "success",
+      "steps": 2,
+      "errors": [],
+      "final_answer": "Done.",
+      "total_tokens": 300,
+      "total_cost_usd": 0.0004,
+      "timestamp": "2026-06-01T09:24:25.280646"
+    }
+  ]
+}
